@@ -69,6 +69,11 @@
     :documentation "Current SDL surface with the content of the grid."
    )
 
+   (surface-max-pos
+    :documentation "The maximum offset where to write in the surface."
+    :type integer
+    :initform 0)
+
    (sdl-fmt
     :initform nil
     :documentation "Current SDL pixel format of sdl-surface."
@@ -112,6 +117,8 @@
     (with-slots (screen-width screen-height) obj
       (setf (slot-value obj 'sdl-surface) (sdl2:create-rgb-surface screen-width screen-height 32))
       (setf (slot-value obj 'sdl-fmt) (sdl2:surface-format (slot-value obj 'sdl-surface)))
+      (setf (slot-value obj 'surface-max-pos) (1- (* screen-width screen-height)))
+
       (with-rects
           ((rect1 0 0 screen-width screen-height))
           (sdl2:fill-rect (slot-value obj 'sdl-surface) rect1 (sdl2:map-rgb (slot-value obj 'sdl-fmt) 0 0 0)))
@@ -135,7 +142,7 @@
 (declaim (inline snow-draw-live-cell))
 (defun snow-draw-live-cell (id color
                             dim
-                            screen-width pxs)
+                            screen-width surface-max-pos pxs)
   "Draw in a rather fast way a live cell on the SDL surface.
    Hence, many params must be passed for avoiding a slow access to object properties."
 
@@ -154,7 +161,9 @@
          (py3 (+ py2 screen-width))
          (py4 (+ py3 screen-width)))
 
-        (macrolet ((dp (p) `(setf (mem-aref pxs :uint32 ,p) color)))
+        (macrolet ((dp (p)
+                     `(when (and (>= ,p 0) (<= ,p surface-max-pos))
+                        (setf (mem-aref pxs :uint32 ,p) color))))
 
            (dp (1+ py1))     ; centered *
 
@@ -227,17 +236,19 @@
 
 (declaim (inline snow-counter-add-new-active-cell))
 (defun* (snow-counter-add-new-active-cell -> :void) ((obj snow-counter) (i integer))
-  (with-slots (active-cells active-cells-count) obj
-    (setf (aref active-cells active-cells-count) i))
+  (with-slots (max-id active-cells active-cells-count) obj
+    (when (and (>= i 0) (<= i max-id))
+      (setf (aref active-cells active-cells-count) i))
 
-    (incf (slot-value obj 'active-cells-count)))
+      (incf (slot-value obj 'active-cells-count))))
 
 (declaim (inline snow-counter-add-new-birth))
 (defun* (snow-counter-add-new-birth -> :void) ((obj snow-counter) (i integer))
-  (with-slots (new-births new-births-count) obj
-    (setf (aref new-births new-births-count) i))
+  (with-slots (max-id new-births new-births-count) obj
+    (when (and (>= i 0) (<= i max-id))
+      (setf (aref new-births new-births-count) i))
 
-    (incf (slot-value obj 'new-births-count)))
+      (incf (slot-value obj 'new-births-count))))
 
 (defmethod initialize-instance :after ((obj snow-counter) &key)
   (with-slots (dim max-id center-id) obj
@@ -271,6 +282,7 @@
   (with-slots (new-births new-births-count
                dim max-id neighbours
                screen-width
+               surface-max-pos
                sdl-surface) obj
     (iter (with color = (snow-current-color obj))
           (with pxs = (sdl2:surface-pixels sdl-surface))
@@ -279,7 +291,7 @@
           (after-each
              (snow-draw-live-cell j color
                                   dim
-                                  screen-width
+                                  screen-width surface-max-pos
                                   pxs)
 
              (snow-do-on-neighbours-of dim max-id j
@@ -328,7 +340,7 @@
     (multiple-value-bind (_1 w h _2)
       (sdl2:get-current-display-mode 0)
 
-      (sdl2:with-window (win :title "Snow 0.1" :w w :h h :flags '(:shown :frame))
+      (sdl2:with-window (win :title "Snow 0.1" :w w :h h :flags '(:shown :maximized))
 
       (multiple-value-bind (win-width win-height)
         (sdl2:get-window-size win)
@@ -344,3 +356,5 @@
           (next! snow)
           (sdl2:delay 1))
         )))))))
+
+(main)
