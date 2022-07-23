@@ -97,8 +97,9 @@
       A cell becomes alive if it has an odd number of live neighbours.
       A live cell, never dies."))
 
-(defun* (snow-screen-width-to-dim -> integer) ((screen-width integer))
-  (floor screen-width 2))
+(defun* (snow-screen-to-dim -> integer) ((screen-width integer) (screen-height integer))
+  (min (floor screen-width 2)
+       (floor screen-height 2)))
 
 (defmethod initialize-instance :after ((obj snow) &key)
   (with-slots (dim) obj
@@ -144,14 +145,14 @@
   ;         ***
   ;         ***
   ;          *
-    (let* ((t1 (floor id dim))
-           (offset-x (mod t1 2))
-           (screen-x (+ offset-x (* 2 (mod id dim))))
-           (screen-y (* 2 t1))
-           (py1 (+ screen-x (* screen-width screen-y)))
-           (py2 (+ py1 screen-width))
-           (py3 (+ py2 screen-width))
-           (py4 (+ py3 screen-width)))
+  (let* ((t1 (floor id dim))
+         (offset-x (mod t1 2))
+         (screen-x (+ offset-x (* 2 (mod id dim))))
+         (screen-y (* 2 t1))
+         (py1 (+ screen-x (* screen-width screen-y)))
+         (py2 (+ py1 screen-width))
+         (py3 (+ py2 screen-width))
+         (py4 (+ py3 screen-width)))
 
         (macrolet ((dp (p) `(setf (mem-aref pxs :uint32 ,p) color)))
 
@@ -320,28 +321,26 @@
     (snow-counter-process-active-cells obj)
     (snow-next-color! obj))
 
-; TODO transform in a reusable function
-(defun* (test1 -> :void) ((win-width integer))
-  "Launch a snow simulator."
-  (let* ((dim (snow-screen-width-to-dim win-width))
-         (snow (make-instance 'snow-counter :dim dim))
-         (screen-width (slot-value snow 'screen-width))
-         (screen-height (slot-value snow 'screen-height))
-         (i 1))
+(defun* (main -> :void) ()
+  "Test graphics."
 
   (sdl2:with-init (:everything)
-    (sdl2:with-window (win :title "Snow 0.1" :w screen-width :h screen-height)
-      (sdl2:with-event-loop
-        (:method :poll)
-        (:idle
-          ()
-          (next! snow)
+    (multiple-value-bind (_1 w h _2)
+      (sdl2:get-current-display-mode 0)
+
+      (sdl2:with-window (win :title "Snow 0.1" :w w :h h :flags '(:shown :frame))
+
+      (multiple-value-bind (win-width win-height)
+        (sdl2:get-window-size win)
+
+        (let* ((dim (snow-screen-to-dim win-width win-height))
+               (snow (make-instance 'snow-counter :dim dim)))
+
+      (sdl2:with-event-loop (:method :poll)
+        (:quit () t)
+        (:idle ()
           (sdl2:blit-surface (slot-value snow 'sdl-surface) nil (sdl2:get-window-surface win) nil)
           (sdl2:update-window win)
-          (finish-output)
-          (sdl2:delay 100)
-          (incf i))
-        (:quit () t))))))
-
-; TODO
-; (test1 400)
+          (next! snow)
+          (sdl2:delay 1))
+        )))))))
