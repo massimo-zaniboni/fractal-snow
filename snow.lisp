@@ -216,6 +216,9 @@
 
 (defclass snow-counter (snow)
   (
+   (live-cells
+    :documentation "The live-cells.")
+
    (neighbours
     :documentation "Count the neighbours of every cell.")
 
@@ -227,34 +230,28 @@
     :initform 0)
 
    (active-cells
-    :documentation "Cells that can became alive in next iteration, and that must be checked.")
-
-   (active-cells-count
-    :type integer
-    :initform 0)
-
+    :documentation "Cells to monitor because theirs inputs from which they depend is changed.")
  )
 
   (:documentation "Calculate snow using an array counting the neighbours."))
 
-(declaim (inline snow-counter-add-new-active-cell))
-(defun* (snow-counter-add-new-active-cell -> :void) ((obj snow-counter) (i integer))
-  (with-slots (max-id active-cells active-cells-count) obj
-    (when (and (>= i 0) (<= i max-id))
-      (setf (aref active-cells active-cells-count) i))
-
-      (incf (slot-value obj 'active-cells-count))))
 
 (declaim (inline snow-counter-add-new-birth))
 (defun* (snow-counter-add-new-birth -> :void) ((obj snow-counter) (i integer))
-  (with-slots (max-id new-births new-births-count) obj
+  (with-slots (max-id live-cells new-births new-births-count) obj
     (when (and (>= i 0) (<= i max-id))
+      (setf (aref live-cells i) 1)
       (setf (aref new-births new-births-count) i))
-
       (incf (slot-value obj 'new-births-count))))
 
 (defmethod initialize-instance :after ((obj snow-counter) &key)
   (with-slots (dim max-id center-id) obj
+    (setf (slot-value obj 'live-cells)
+          (make-array (1+ max-id)
+                      :adjustable nil
+                      :element-type 'bit
+                      :initial-element 0))
+
     (setf (slot-value obj 'neighbours)
           (make-array (1+ max-id)
                       :adjustable nil
@@ -266,16 +263,14 @@
                       :adjustable t
                       :element-type 'integer))
 
-    (setf (slot-value obj 'active-cells)
-          (make-array (floor max-id 4)
-                      :adjustable t
-                      :element-type 'integer))
+    (setf (slot-value obj 'active-cells) (make-hash-table :size (floor max-id 10)))
 
-    (snow-counter-add-new-birth obj center-id)
-    ))
+    (snow-counter-add-new-birth obj center-id))
+  )
 
 (defun* (snow-counter-process-new-births -> :void) ((obj snow-counter) &key (graphics t))
   (with-slots (new-births new-births-count
+               active-cells
                dim max-id neighbours
                screen-width
                surface-max-pos
@@ -293,37 +288,22 @@
 
              (snow-do-on-neighbours-of dim max-id j
                (lambda (k)
-                  (when (= 1 (incf (aref neighbours k)))
-                    ; this is the first time this neighbour has a live cell near him,
-                    ; so now it must be monitored.
-                    (snow-counter-add-new-active-cell obj k)
-                 )))))
+                  (incf (aref neighbours k))
+                  (setf (gethash k active-cells) nil)
+                 )))
 
-   (setf (slot-value obj 'new-births-count) 0)))
+           (finally
+             (setf (slot-value obj 'new-births-count) 0)))))
 
 (defun* (snow-counter-process-active-cells -> :void) ((obj snow-counter))
-  (with-slots (active-cells active-cells-count neighbours) obj
-    (iter (with last-i = (1- active-cells-count))
-          (for i first 0 then (1+ i))
-          (while (<= i last-i))
-          (for j = (aref active-cells i))
+  (with-slots (live-cells active-cells neighbours) obj
+    (iter
+          (for (j _nil) in-hashtable active-cells)
           (for c = (aref neighbours j))
-          (for new-born? = (oddp c))
-          (for stable? = (= c 6))
+          (for new-born? = (and (oddp c) (zerop (aref live-cells j))))
           (when new-born? (snow-counter-add-new-birth obj j))
-          (when (or new-born? stable?)
-                ; This cell can never change state in future, so remove from active cells.
-                ; Take the last active cell on the queue and put in the position of this cell,
-                ; for reducing the size of the queue, and for removing this cell.
-                ; Do not move i pointer, because now we have a new value on it.
-                (when (< i last-i)
-                  (setf (aref active-cells i) (aref active-cells last-i))
-                  (decf i))
-
-                (decf last-i)
-                (decf active-cells-count))
           (finally
-             (setf (slot-value obj 'active-cells-count) active-cells-count)))))
+             (clrhash active-cells)))))
 
 (defmethod next! ((obj snow-counter) &key (graphics t))
     (snow-counter-process-new-births obj :graphics graphics)
@@ -359,7 +339,6 @@
             (t (next! snow :graphics graphics)))
           (unless benchmark (sdl2:delay 10)))
         )))))))
-
 
 (main)
 
