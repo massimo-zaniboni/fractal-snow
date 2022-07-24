@@ -325,6 +325,13 @@
       (multiple-value-bind (win-width win-height)
         (sdl2:get-window-size win)
 
+      ; NOTE: erase the physical window, and not the "logical one".
+      (with-rects
+          ((rect1 0 0 win-width win-height))
+        (let* ((srf (sdl2:get-window-surface win))
+               (fmt (sdl2:surface-format srf)))
+           (sdl2:fill-rect srf rect1 (sdl2:map-rgb fmt 0 0 0))))
+
         (let* ((dim (snow-screen-to-dim win-width win-height))
                (snow (make-instance 'snow-counter :dim dim)))
 
