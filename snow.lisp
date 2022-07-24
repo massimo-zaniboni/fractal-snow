@@ -32,27 +32,27 @@
   ((dim
     :documentation "x and y of the grid, go from 0 to (- (grid-dim self) 1)."
     :initarg :dim
-    :type integer)
+    :type fixnum)
 
    (max-id
     :documentation "The maximum id of a cell inside the grid."
-    :type integer
+    :type fixnum
     :initform 0
     )
 
    (center-id
     :documentation "The position of the center cell."
-    :type integer
+    :type fixnum
     :initform 0)
 
    (screen-width
     :documentation "The width of the grid on the screen."
-    :type integer
+    :type fixnum
     :initform 0)
 
    (screen-height
     :documentation "The height of the grid on the screen."
-    :type integer
+    :type fixnum
     :initform 0)
 
    (sdl-surface
@@ -65,7 +65,7 @@
 
    (surface-max-pos
     :documentation "The maximum offset where to write in the surface."
-    :type integer
+    :type fixnum
     :initform 0)
 
    (sdl-fmt
@@ -75,17 +75,17 @@
 
    (color-R
     :documentation "Current color, R compontent."
-    :type integer
+    :type (integer 0 255)
     :initform 0)
 
    (color-G
     :documentation "Current color, G component."
-    :type integer
+    :type (integer 0 255)
     :initform 0)
 
    (color-B
     :documentation "Current color, B component."
-    :type integer
+    :type (integer 0 255)
     :initform 0)
    )
 
@@ -96,7 +96,7 @@
       A cell becomes alive if it has an odd number of live neighbours.
       A live cell, never dies."))
 
-(defun* (snow-screen-to-dim -> integer) ((screen-width integer) (screen-height integer))
+(defun* (snow-screen-to-dim -> fixnum) ((screen-width fixnum) (screen-height fixnum))
   (min (floor screen-width 2)
        (floor screen-height 2)))
 
@@ -143,11 +143,13 @@
     (sdl2:map-rgb sdl-fmt color-R color-G color-B)))
 
 (declaim (inline snow-draw-live-cell))
-(defun snow-draw-live-cell (id color
-                            dim
-                            screen-width surface-max-pos pxs)
+(defun* snow-draw-live-cell ((id fixnum) color
+                             (dim fixnum)
+                             (screen-width fixnum) (surface-max-pos fixnum) pxs)
   "Draw in a rather fast way a live cell on the SDL surface.
    Hence, many params must be passed for avoiding a slow access to object properties."
+
+  (declare (optimize (speed 3) (debug 0) (safety 0)))
 
   ; A snow cell is an hexagon with this shape
   ;
@@ -155,14 +157,14 @@
   ;         ***
   ;         ***
   ;          *
-  (let* ((t1 (floor id dim))
-         (offset-x (if (zerop (mod t1 2)) 1 0))
-         (screen-x (+ offset-x (* 2 (mod id dim))))
-         (screen-y (* 2 t1))
-         (py1 (+ screen-x (* screen-width screen-y)))
-         (py2 (+ py1 screen-width))
-         (py3 (+ py2 screen-width))
-         (py4 (+ py3 screen-width)))
+  (*let ((t1 fixnum (floor id dim))
+         (offset-x fixnum (if (zerop (mod t1 2)) 1 0))
+         (screen-x fixnum (+ offset-x (* 2 (mod id dim))))
+         (screen-y fixnum (* 2 t1))
+         (py1 fixnum (+ screen-x (the fixnum (* screen-width screen-y))))
+         (py2 fixnum (+ py1 screen-width))
+         (py3 fixnum (+ py2 screen-width))
+         (py4 fixnum (+ py3 screen-width)))
 
         (macrolet ((dp (p)
                      `(when (and (>= ,p 0) (<= ,p surface-max-pos))
@@ -187,24 +189,28 @@
 (defgeneric* (end? -> :bool) ((obj snow))
   (:documentation "t if next! has reached a fixed point."))
 
-(defun* (snow-do-on-neighbours-of -> :void) ((dim integer) (max-id integer) (id integer) f)
+(declaim (inline snow-do-on-neighbours-of))
+(defun* (snow-do-on-neighbours-of -> :void) ((dim fixnum) (max-id fixnum) (id fixnum) (f function))
   "Execute f on all the neighbours of the cell."
-  (let* (
-         (gx (floor id dim))
-         (o  (if (zerop (mod gx 2)) 0 -1))
-         (c-up (+ (- id dim) o))
-         (c-down (+ id dim o))
+  (declare (optimize (speed 3) (debug 0) (safety 0)))
 
-         (id1 (1- id))
-         (id2 (1+ id))
-         (id3 c-up)
-         (id4 (1+ c-up))
-         (id5 c-down)
-         (id6 (1+ c-down)))
+  (*let (
+         (gx fixnum (floor id dim))
+         (o fixnum (if (zerop (mod gx 2)) 0 -1))
+         (c-up fixnum (+ (- id dim) o))
+         (c-down fixnum (+ id dim o))
 
-   (flet ((ff (cell-id &key (x 0) (y 0))
+         (id1 fixnum (1- id))
+         (id2 fixnum (1+ id))
+         (id3 fixnum c-up)
+         (id4 fixnum (1+ c-up))
+         (id5 fixnum c-down)
+         (id6 fixnum (1+ c-down)))
+
+   (flet* (( (ff -> :void) ((cell-id fixnum) &key ((x fixnum) 0) ((y fixnum) 0))
              (when (and (>= cell-id 0) (<= cell-id max-id))
-                (funcall f cell-id :x x :y y))))
+                (funcall f cell-id :x x :y y))
+             nil))
 
      (ff id1 :x -1 :y 0)
      (ff id2 :x 1 :y 0)
@@ -221,16 +227,20 @@
 (defclass snow-counter (snow)
   (
    (live-cells
-    :documentation "The live-cells.")
+    :documentation "The live-cells."
+    :type (simple-array 'bit 1)
+    )
 
    (neighbours
-    :documentation "Count the neighbours of every cell.")
+    :documentation "Count the neighbours of every cell."
+    :type (simple-array '(integer 0 6) 1))
 
    (new-births
-    :documentation "New birthed cells to process.")
+    :documentation "New birthed cells to process."
+    :type (array 'fixnum 1))
 
    (new-births-count
-    :type integer
+    :type fixnum
     :initform 0)
 
    (active-cells
@@ -239,14 +249,17 @@
 
   (:documentation "Calculate snow using an array counting the neighbours."))
 
-
 (declaim (inline snow-counter-add-new-birth))
-(defun* (snow-counter-add-new-birth -> :void) ((obj snow-counter) (i integer))
+(defun* (snow-counter-add-new-birth -> :void) ((obj snow-counter) (i fixnum))
+  (declare (optimize (speed 3) (debug 0) (safety 0)))
   (with-slots (max-id live-cells new-births new-births-count) obj
+    (declare (fixnum max-id new-births-count))
+    (declare (type (simple-array bit 1) live-cells))
+    (declare (type (array fixnum 1) new-births))
     (when (and (>= i 0) (<= i max-id))
       (setf (aref live-cells i) 1)
       (setf (aref new-births new-births-count) i))
-      (incf (slot-value obj 'new-births-count))))
+      (incf (the fixnum (slot-value obj 'new-births-count)))))
 
 (defmethod initialize-instance :after ((obj snow-counter) &key)
   (with-slots (dim max-id center-id) obj
@@ -265,7 +278,7 @@
     (setf (slot-value obj 'new-births)
           (make-array (floor max-id 8)
                       :adjustable t
-                      :element-type 'integer))
+                      :element-type 'fixnum))
 
     (setf (slot-value obj 'active-cells) (make-hash-table :size (floor max-id 10)))
 
@@ -273,16 +286,21 @@
   )
 
 (defun* (snow-counter-process-new-births -> :void) ((obj snow-counter) &key (graphics t))
+  (declare (optimize (speed 3) (debug 0) (safety 0)))
   (with-slots (new-births new-births-count
                active-cells
                dim max-id neighbours
                screen-width
                surface-max-pos
                sdl-surface) obj
+    (declare (fixnum new-births-count dim max-id screen-width surface-max-pos))
+    (declare (type (simple-array (integer 0 6) 1) neighbours))
+
     (iter (with color = (snow-current-color obj))
           (with pxs = (when graphics (sdl2:surface-pixels sdl-surface)))
           (for i from 0 below new-births-count)
           (for j = (aref new-births i))
+          (declare (fixnum i j))
           (after-each
              (when graphics
                (snow-draw-live-cell j color
@@ -291,24 +309,35 @@
                                     pxs))
 
              (snow-do-on-neighbours-of dim max-id j
-               (lambda (k &key (x 0) (y 0))
-                        (incf (aref neighbours k))
-                        (setf (gethash k active-cells) nil))))
+               (lambda* ((k fixnum) &key ((x fixnum) 0) ((y fixnum) 0))
+                        ; TODO investigate, sometime there are more than 6 neighbours
+                        (*let ((v (integer 0 6) (the (integer 0 6) (aref neighbours k))))
+                          (when (< v 6)
+                            (setf (aref neighbours k) (the (integer 0 6) (1+ v)))
+                            (setf (gethash k active-cells) nil)))
+                        nil)))
 
            (finally
              (setf (slot-value obj 'new-births-count) 0)))))
 
 (defun* (snow-counter-process-active-cells -> :void) ((obj snow-counter))
+  (declare (optimize (speed 3) (debug 0) (safety 0)))
+
   (with-slots (live-cells active-cells neighbours) obj
+    (declare (type (simple-array bit 1) live-cells))
+    (declare (type (simple-array (integer 0 6) 1) neighbours))
+
     (iter
           (for (j _nil) in-hashtable active-cells)
-          (for c = (aref neighbours j))
+          (for c = (the (integer 0 6) (aref neighbours j)))
+          (declare (type (integer 0 6) c))
           (for new-born? = (and (oddp c) (zerop (aref live-cells j))))
           (when new-born? (snow-counter-add-new-birth obj j))
           (finally
              (clrhash active-cells)))))
 
 (defmethod next! ((obj snow-counter) &key (graphics t))
+    (declare (optimize (speed 3) (debug 0) (safety 0)))
     (snow-counter-process-new-births obj :graphics graphics)
     (snow-counter-process-active-cells obj)
     (snow-next-color! obj))
@@ -416,5 +445,5 @@
 (main)
 
 ; TODO
-(trivial-benchmark:with-timing (2)
- (main :graphics nil :benchmark t))
+; (trivial-benchmark:with-timing (2)
+; (main :graphics nil :benchmark t))
