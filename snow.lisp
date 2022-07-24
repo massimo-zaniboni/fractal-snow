@@ -179,8 +179,11 @@
            (dp (1+ py4))    ; centered *
           )))
 
-(defgeneric* (next! -> :void) ((obj snow))
+(defgeneric* (next! -> :void) ((obj snow) &key (graphics  t))
   (:documentation "Advance the calculation of sdl-surface."))
+
+(defgeneric* (end? -> :bool) ((obj snow))
+  (:documentation "t if next! has reached a fixed point."))
 
 (defun* (snow-do-on-neighbours-of -> :void) ((dim integer) (max-id integer) (id integer) f)
   "Execute f on all the neighbours of the cell."
@@ -271,21 +274,22 @@
     (snow-counter-add-new-birth obj center-id)
     ))
 
-(defun* (snow-counter-process-new-births -> :void) ((obj snow-counter))
+(defun* (snow-counter-process-new-births -> :void) ((obj snow-counter) &key (graphics t))
   (with-slots (new-births new-births-count
                dim max-id neighbours
                screen-width
                surface-max-pos
                sdl-surface) obj
     (iter (with color = (snow-current-color obj))
-          (with pxs = (sdl2:surface-pixels sdl-surface))
+          (with pxs = (when graphics (sdl2:surface-pixels sdl-surface)))
           (for i from 0 below new-births-count)
           (for j = (aref new-births i))
           (after-each
-             (snow-draw-live-cell j color
-                                  dim
-                                  screen-width surface-max-pos
-                                  pxs)
+             (when graphics
+               (snow-draw-live-cell j color
+                                    dim
+                                    screen-width surface-max-pos
+                                    pxs))
 
              (snow-do-on-neighbours-of dim max-id j
                (lambda (k)
@@ -321,12 +325,15 @@
           (finally
              (setf (slot-value obj 'active-cells-count) active-cells-count)))))
 
-(defmethod next! ((obj snow-counter))
-    (snow-counter-process-new-births obj)
+(defmethod next! ((obj snow-counter) &key (graphics t))
+    (snow-counter-process-new-births obj :graphics graphics)
     (snow-counter-process-active-cells obj)
     (snow-next-color! obj))
 
-(defun* (main -> :void) ()
+(defmethod end? ((obj snow-counter))
+  (zerop (slot-value obj 'new-births-count)))
+
+(defun main (&key (benchmark nil) (graphics t))
   "Main function"
 
   (sdl2:with-init (:everything)
@@ -346,34 +353,16 @@
         (:idle ()
           (sdl2:blit-surface (slot-value snow 'sdl-surface) nil (sdl2:get-window-surface win) nil)
           (sdl2:update-window win)
-          (next! snow)
-          (sdl2:delay 1))
+          (cond
+            ((end? snow)
+             (when benchmark (sdl2:push-quit-event)))
+            (t (next! snow :graphics graphics)))
+          (unless benchmark (sdl2:delay 10)))
         )))))))
+
 
 (main)
 
-; TODO delete
-(defun* (test -> :void) ()
-  "Test graphics."
-
-  (sdl2:with-init (:everything)
-    (multiple-value-bind (_1 w h _2)
-      (sdl2:get-current-display-mode 0)
-
-      (sdl2:with-window (win :title "Snow 0.1" :w w :h h :flags '(:shown :maximized))
-
-      (multiple-value-bind (win-width win-height)
-        (sdl2:get-window-size win)
-
-        (let* ((dim (snow-screen-to-dim win-width win-height))
-               (snow (make-instance 'snow-counter :dim dim)))
-
-      (sdl2:with-event-loop (:method :poll)
-        (:quit () t)
-        (:idle ()
-          (sdl2:blit-surface (slot-value snow 'sdl-surface) nil (sdl2:get-window-surface win) nil)
-          (sdl2:update-window win)
-          (next! snow)
-          ; TODO (sdl2:delay 1)
-          )
-        )))))))
+; TODO
+(trivial-benchmark:with-timing (2)
+  (main :graphics nil :benchmark t))
