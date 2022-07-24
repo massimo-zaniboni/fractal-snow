@@ -23,18 +23,6 @@
 
 (in-package :snow)
 
-; FACT it is better using a surface apart because the surface of a window can be accelerated
-; and emulated as a streaming texture
-;
-; FACT I try with this paradigm:
-; - YES: macro injecting piece of code
-; - YES: inlined functions
-; - YES: stream-like API with internal state
-; - YES: cached data in slot, that are fast accessible
-; - NO: generic functions for simple data
-; - NO: complex CLOS hierarchies and abstractions
-; TODO deinit resources like surface at the end of the object
-
 (defmacro with-surface (name create &body body)
   `(let ((,name ,create))
       (unwind-protect (progn ,@body) (sdl2:free-surface ,name))))
@@ -214,16 +202,16 @@
          (id5 c-down)
          (id6 (1+ c-down)))
 
-   (flet ((ff (cell-id)
+   (flet ((ff (cell-id &key (x 0) (y 0))
              (when (and (>= cell-id 0) (<= cell-id max-id))
-                (funcall f cell-id))))
+                (funcall f cell-id :x x :y y))))
 
-     (ff id1)
-     (ff id2)
-     (ff id3)
-     (ff id4)
-     (ff id5)
-     (ff id6))
+     (ff id1 :x -1 :y 0)
+     (ff id2 :x 1 :y 0)
+     (ff id3 :x 0 :y -1)
+     (ff id4 :x 1 :y -1)
+     (ff id5 :x 0 :y 1)
+     (ff id6 :x 1 :y 1))
 
      nil
   ))
@@ -303,10 +291,9 @@
                                     pxs))
 
              (snow-do-on-neighbours-of dim max-id j
-               (lambda (k)
-                  (incf (aref neighbours k))
-                  (setf (gethash k active-cells) nil)
-                 )))
+               (lambda (k &key (x 0) (y 0))
+                        (incf (aref neighbours k))
+                        (setf (gethash k active-cells) nil))))
 
            (finally
              (setf (slot-value obj 'new-births-count) 0)))))
@@ -332,27 +319,57 @@
 ;; --------------------------------------------
 
 (defclass snow-counter2 (snow-counter)
-  ()
+  (
+    (rnd2
+    :initform (random-state:make-generator :mersenne-twister-32 152)))
 
   (:documentation "Calculate snow using an array counting the neighbours."))
 
-(defun* (snow-counter2-process-active-cells -> :void) ((obj snow-counter))
-  (with-slots (live-cells active-cells neighbours) obj
+(defun* (snow-counter2-process-active-cells -> :void) ((obj snow-counter2))
+  (with-slots (live-cells active-cells neighbours rnd2) obj
     (iter
           (for (j _nil) in-hashtable active-cells)
           (for c = (aref neighbours j))
-          (for new-born? = (and (oddp c) (not (= c 3)) (not (= c 5)) (zerop (aref live-cells j))))
+          (for new-born? = (and (oddp c)
+                                (not (= 1 (random-state:random-int rnd2 0 1024)))
+                                (zerop (aref live-cells j))))
           (when new-born? (snow-counter-add-new-birth obj j))
           (finally
              (clrhash active-cells)))))
 
+(defun* (snow-counter2-process-new-births -> :void) ((obj snow-counter2) &key (graphics t))
+  (with-slots (new-births new-births-count
+               active-cells
+               dim max-id neighbours
+               screen-width
+               surface-max-pos
+               sdl-surface) obj
+    (iter (with color = (snow-current-color obj))
+          (with pxs = (when graphics (sdl2:surface-pixels sdl-surface)))
+          (for i from 0 below new-births-count)
+          (for j = (aref new-births i))
+          (after-each
+             (when graphics
+               (snow-draw-live-cell j color
+                                    dim
+                                    screen-width surface-max-pos
+                                    pxs))
+
+             (snow-do-on-neighbours-of dim max-id j
+               (lambda (k &key (x 0) (y 0))
+                 (incf (aref neighbours k))
+                 (setf (gethash k active-cells) nil))
+                 ))
+
+           (finally
+             (setf (slot-value obj 'new-births-count) 0)))))
+
 (defmethod next! ((obj snow-counter2) &key (graphics t))
-    (snow-counter-process-new-births obj :graphics graphics)
+    (snow-counter2-process-new-births obj :graphics graphics)
     (snow-counter2-process-active-cells obj)
     (snow-next-color! obj))
 
 ;; --------------------------------------------
-
 
 (defun main (&key (benchmark nil) (graphics t))
   "Main function"
@@ -396,8 +413,8 @@
                                                (floor remaining-pause fps-scale)))))
         )))))))
 
-; (main)
+(main)
 
 ; TODO
-; (trivial-benchmark:with-timing (2)
-;  (main :graphics nil :benchmark t))
+(trivial-benchmark:with-timing (2)
+ (main :graphics nil :benchmark t))
