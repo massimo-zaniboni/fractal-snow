@@ -11,10 +11,12 @@
 (ql:quickload :sdl2)              ;; portable graphics
 (ql:quickload :cl-opengl)         ;; opengl support
 (ql:quickload :cffi)              ;; C foreign functional interface
+(ql:quickload :trivial-benchmark)
 
 (defpackage :snow
   (:use :cl :defstar :trivial-types :iterate :sdl2 :cffi)
   (:import-from :cl-opengl)
+  (:import-from :trivial-benchmark)
   )
 
 (in-package :snow)
@@ -30,7 +32,6 @@
 ; - NO: generic functions for simple data
 ; - NO: complex CLOS hierarchies and abstractions
 ; TODO deinit resources like surface at the end of the object
-; TODO use only a surface dimension and calculate the dimension of the griglia accordingly
 
 (defmacro with-surface (name create &body body)
   `(let ((,name ,create))
@@ -153,7 +154,7 @@
   ;         ***
   ;          *
   (let* ((t1 (floor id dim))
-         (offset-x (mod t1 2))
+         (offset-x (if (zerop (mod t1 2)) 1 0))
          (screen-x (+ offset-x (* 2 (mod id dim))))
          (screen-y (* 2 t1))
          (py1 (+ screen-x (* screen-width screen-y)))
@@ -183,12 +184,11 @@
 
 (defun* (snow-do-on-neighbours-of -> :void) ((dim integer) (max-id integer) (id integer) f)
   "Execute f on all the neighbours of the cell."
-  (let* ((g dim)
-         (gx (mod id g))
-         (h  (mod gx 2))
-         (-h (- h))
-         (c-up (- id g h))
-         (c-down (+ id g -h))
+  (let* (
+         (gx (floor id dim))
+         (o  (if (zerop (mod gx 2)) 0 -1))
+         (c-up (+ (- id dim) o))
+         (c-down (+ id dim o))
 
          (id1 (1- id))
          (id2 (1+ id))
@@ -271,13 +271,6 @@
     (snow-counter-add-new-birth obj center-id)
     ))
 
-; TODO
-(defun test2 ()
-  (let* ((s (make-instance 'snow-counter :dim 100)))
-    (format t "active-cells ~a ~%" (slot-value s 'screen-width))
-    )
-)
-
 (defun* (snow-counter-process-new-births -> :void) ((obj snow-counter))
   (with-slots (new-births new-births-count
                dim max-id neighbours
@@ -334,7 +327,7 @@
     (snow-next-color! obj))
 
 (defun* (main -> :void) ()
-  "Test graphics."
+  "Main function"
 
   (sdl2:with-init (:everything)
     (multiple-value-bind (_1 w h _2)
@@ -358,3 +351,29 @@
         )))))))
 
 (main)
+
+; TODO delete
+(defun* (test -> :void) ()
+  "Test graphics."
+
+  (sdl2:with-init (:everything)
+    (multiple-value-bind (_1 w h _2)
+      (sdl2:get-current-display-mode 0)
+
+      (sdl2:with-window (win :title "Snow 0.1" :w w :h h :flags '(:shown :maximized))
+
+      (multiple-value-bind (win-width win-height)
+        (sdl2:get-window-size win)
+
+        (let* ((dim (snow-screen-to-dim win-width win-height))
+               (snow (make-instance 'snow-counter :dim dim)))
+
+      (sdl2:with-event-loop (:method :poll)
+        (:quit () t)
+        (:idle ()
+          (sdl2:blit-surface (slot-value snow 'sdl-surface) nil (sdl2:get-window-surface win) nil)
+          (sdl2:update-window win)
+          (next! snow)
+          ; TODO (sdl2:delay 1)
+          )
+        )))))))
