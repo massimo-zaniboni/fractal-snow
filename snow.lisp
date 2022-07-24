@@ -12,11 +12,13 @@
 (ql:quickload :cl-opengl)         ;; opengl support
 (ql:quickload :cffi)              ;; C foreign functional interface
 (ql:quickload :trivial-benchmark)
+(ql:quickload :random-state)
 
 (defpackage :snow
   (:use :cl :defstar :trivial-types :iterate :sdl2 :cffi)
   (:import-from :cl-opengl)
   (:import-from :trivial-benchmark)
+  (:import-from :random-state)
   )
 
 (in-package :snow)
@@ -69,6 +71,9 @@
     :initform nil
     :documentation "Current SDL surface with the content of the grid."
    )
+
+   (rnd
+    :initform (random-state:make-generator :mersenne-twister-32 627))
 
    (surface-max-pos
     :documentation "The maximum offset where to write in the surface."
@@ -137,9 +142,10 @@
         (floor dim duration))))
 
 (defmethod snow-next-color! ((obj snow))
-  (setf (slot-value obj 'color-R) (random 255))
-  (setf (slot-value obj 'color-G) (random 255))
-  (setf (slot-value obj 'color-B) (random 255)))
+  (with-slots (rnd) obj
+    (setf (slot-value obj 'color-R) (random-state:random-int rnd 0 255))
+    (setf (slot-value obj 'color-G) (random-state:random-int rnd 0 255))
+    (setf (slot-value obj 'color-B) (random-state:random-int rnd 0 255))))
 
 (defun* snow-current-color ((obj snow))
   "Calculate the current color.
@@ -221,6 +227,8 @@
 
      nil
   ))
+
+;; --------------------------------------------------
 
 (defclass snow-counter (snow)
   (
@@ -321,6 +329,31 @@
 (defmethod end? ((obj snow-counter))
   (zerop (slot-value obj 'new-births-count)))
 
+;; --------------------------------------------
+
+(defclass snow-counter2 (snow-counter)
+  ()
+
+  (:documentation "Calculate snow using an array counting the neighbours."))
+
+(defun* (snow-counter2-process-active-cells -> :void) ((obj snow-counter))
+  (with-slots (live-cells active-cells neighbours) obj
+    (iter
+          (for (j _nil) in-hashtable active-cells)
+          (for c = (aref neighbours j))
+          (for new-born? = (and (oddp c) (not (= c 3)) (not (= c 5)) (zerop (aref live-cells j))))
+          (when new-born? (snow-counter-add-new-birth obj j))
+          (finally
+             (clrhash active-cells)))))
+
+(defmethod next! ((obj snow-counter2) &key (graphics t))
+    (snow-counter-process-new-births obj :graphics graphics)
+    (snow-counter2-process-active-cells obj)
+    (snow-next-color! obj))
+
+;; --------------------------------------------
+
+
 (defun main (&key (benchmark nil) (graphics t))
   "Main function"
 
@@ -363,8 +396,8 @@
                                                (floor remaining-pause fps-scale)))))
         )))))))
 
-(main)
+; (main)
 
 ; TODO
-(trivial-benchmark:with-timing (2)
-  (main :graphics nil :benchmark t))
+; (trivial-benchmark:with-timing (2)
+;  (main :graphics nil :benchmark t))
