@@ -2,11 +2,11 @@
 
 Generate a fractal image using Common Lisp and SDL library.
 
-## Screenshot
+## Screenshoot
 
 ![Screenshot](/screenshot.png?raw=true "Screenshot")
 
-## License
+# License
 
 This software is released under the [LGPLv3 license](https://opensource.org/licenses/lgpl-3.0.html) or any later version.
 
