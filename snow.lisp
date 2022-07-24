@@ -128,6 +128,14 @@
 (defgeneric* (snow-next-color! -> :void) ((obj snow))
   (:documentation "After next!, use a new color for the cells."))
 
+(defgeneric* (real-time-pause-between-frames -> :integer) ((obj snow) &key (expected-duration-in-seconds 5))
+  (:documentation "The pause between frames, in internal-units-per-second."))
+
+(defmethod real-time-pause-between-frames ((obj snow) &key (expected-duration-in-seconds 5))
+  (with-slots (dim) obj
+  (let ((duration (* expected-duration-in-seconds internal-time-units-per-second)))
+        (floor dim duration))))
+
 (defmethod snow-next-color! ((obj snow))
   (setf (slot-value obj 'color-R) (random 255))
   (setf (slot-value obj 'color-G) (random 255))
@@ -333,18 +341,26 @@
            (sdl2:fill-rect srf rect1 (sdl2:map-rgb fmt 0 0 0))))
 
         (let* ((dim (snow-screen-to-dim win-width win-height))
-               (snow (make-instance 'snow-counter :dim dim)))
+               (snow (make-instance 'snow-counter :dim dim))
+               (frame-delay (real-time-pause-between-frames snow))
+               (fps-scale (/ internal-time-units-per-second 1000))
+               (time1 nil)
+               (time2 nil))
 
       (sdl2:with-event-loop (:method :poll)
         (:quit () t)
         (:idle ()
+          (setf time1 (get-internal-real-time))
           (sdl2:blit-surface (slot-value snow 'sdl-surface) nil (sdl2:get-window-surface win) nil)
           (sdl2:update-window win)
           (cond
             ((end? snow)
              (when benchmark (sdl2:push-quit-event)))
             (t (next! snow :graphics graphics)))
-          (unless benchmark (sdl2:delay 10)))
+          (setf time2 (get-internal-real-time))
+          (unless benchmark (sdl2:delay (let* ((dt (- time2 time1))
+                                               (remaining-pause (max 0 (- frame-delay dt))))
+                                               (floor remaining-pause fps-scale)))))
         )))))))
 
 (main)
