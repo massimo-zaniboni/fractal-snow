@@ -1,27 +1,14 @@
 ;; SPDX-License-Identifier: LGPL-3.0-or-later
 ;; Copyright (C) 2022 Massimo Zaniboni <mzan@dokmelody.org>
 
-(ql:quickload :alexandria)        ;; common CL extensions
-(ql:quickload :trivial-types)     ;; common types
-(ql:quickload :defstar)           ;; add type annotations
-(ql:quickload :iterate)           ;; better loop macro
-(ql:quickload :str)               ;; common string manipulation functions
-(ql:quickload :let-plus)          ;; extend "let"
-(ql:quickload :array-operations)  ;; rich management of arrays
-(ql:quickload :sdl2)              ;; portable graphics
-(ql:quickload :cl-opengl)         ;; opengl support
-(ql:quickload :cffi)              ;; C foreign functional interface
-(ql:quickload :trivial-benchmark)
-(ql:quickload :random-state)
-
-(defpackage :snow
+(defpackage :snow-assembler
   (:use :cl :defstar :trivial-types :iterate :sdl2 :cffi)
   (:import-from :cl-opengl)
   (:import-from :trivial-benchmark)
   (:import-from :random-state)
-  )
+  (:export #:main))
 
-(in-package :snow)
+(in-package :snow-assembler)
 
 (defmacro with-surface (name create &body body)
   `(let ((,name ,create))
@@ -57,8 +44,7 @@
 
    (sdl-surface
     :initform nil
-    :documentation "Current SDL surface with the content of the grid."
-   )
+    :documentation "Current SDL surface with the content of the grid.")
 
    (rnd
     :initform (random-state:make-generator :mersenne-twister-32 627))
@@ -70,8 +56,7 @@
 
    (sdl-fmt
     :initform nil
-    :documentation "Current SDL pixel format of sdl-surface."
-   )
+    :documentation "Current SDL pixel format of sdl-surface.")
 
    (color-R
     :documentation "Current color, R compontent."
@@ -86,8 +71,7 @@
    (color-B
     :documentation "Current color, B component."
     :type (integer 0 255)
-    :initform 0)
-   )
+    :initform 0))
 
   (:documentation "
      An hexagonal grid.
@@ -115,8 +99,7 @@
 
       (with-rects
           ((rect1 0 0 screen-width screen-height))
-          (sdl2:fill-rect (slot-value obj 'sdl-surface) rect1 (sdl2:map-rgb (slot-value obj 'sdl-fmt) 0 0 0)))
-    )))
+          (sdl2:fill-rect (slot-value obj 'sdl-surface) rect1 (sdl2:map-rgb (slot-value obj 'sdl-fmt) 0 0 0))))))
 
 (defgeneric* (snow-next-color! -> :void) ((obj snow))
   (:documentation "After next!, use a new color for the cells."))
@@ -143,6 +126,7 @@
     (sdl2:map-rgb sdl-fmt color-R color-G color-B)))
 
 (declaim (inline snow-draw-live-cell))
+
 (defun* snow-draw-live-cell ((id fixnum) color
                              (dim fixnum)
                              (screen-width fixnum) (surface-max-pos fixnum) pxs)
@@ -219,8 +203,7 @@
      (ff id5 :x 0 :y 1)
      (ff id6 :x 1 :y 1))
 
-     nil
-  ))
+     nil))
 
 ;; --------------------------------------------------
 
@@ -228,8 +211,7 @@
   (
    (live-cells
     :documentation "The live-cells."
-    :type (simple-array 'bit 1)
-    )
+    :type (simple-array 'bit 1))
 
    (neighbours
     :documentation "Count the neighbours of every cell."
@@ -244,12 +226,12 @@
     :initform 0)
 
    (active-cells
-    :documentation "Cells to monitor because theirs inputs from which they depend is changed.")
- )
+    :documentation "Cells to monitor because theirs inputs from which they depend is changed."))
 
   (:documentation "Calculate snow using an array counting the neighbours."))
 
 (declaim (inline snow-counter-add-new-birth))
+
 (defun* (snow-counter-add-new-birth -> :void) ((obj snow-counter) (i fixnum))
   (declare (optimize (speed 3) (debug 0) (safety 0)))
   (with-slots (max-id live-cells new-births new-births-count) obj
@@ -282,8 +264,7 @@
 
     (setf (slot-value obj 'active-cells) (make-hash-table :size (floor max-id 10)))
 
-    (snow-counter-add-new-birth obj center-id))
-  )
+    (snow-counter-add-new-birth obj center-id)))
 
 (defun* (snow-counter-process-new-births -> :void) ((obj snow-counter) &key (graphics t))
   (declare (optimize (speed 3) (debug 0) (safety 0)))
@@ -387,8 +368,7 @@
              (snow-do-on-neighbours-of dim max-id j
                (lambda (k &key (x 0) (y 0))
                  (incf (aref neighbours k))
-                 (setf (gethash k active-cells) nil))
-                 ))
+                 (setf (gethash k active-cells) nil))))
 
            (finally
              (setf (slot-value obj 'new-births-count) 0)))))
@@ -439,11 +419,7 @@
           (setf time2 (get-internal-real-time))
           (unless benchmark (sdl2:delay (let* ((dt (- time2 time1))
                                                (remaining-pause (max 0 (- frame-delay dt))))
-                                               (floor remaining-pause fps-scale)))))
-        )))))))
+                                               (floor remaining-pause fps-scale))))))))))))
 
 (main)
 
-; TODO
-; (trivial-benchmark:with-timing (2)
-; (main :graphics nil :benchmark t))
